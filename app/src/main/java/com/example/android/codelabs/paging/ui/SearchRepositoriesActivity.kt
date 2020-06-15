@@ -20,9 +20,11 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.paging.LoadState
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -48,6 +50,8 @@ class SearchRepositoriesActivity : AppCompatActivity() {
         val view = binding.root
         setContentView(view)
 
+        binding.retryButton.setOnClickListener { adapter.retry() }
+
         // get the view model
         viewModel = ViewModelProvider(this, Injection.provideViewModelFactory())
             .get(SearchRepositoriesViewModel::class.java)
@@ -55,7 +59,7 @@ class SearchRepositoriesActivity : AppCompatActivity() {
         // add dividers between RecyclerView's row items
         val decoration = DividerItemDecoration(this, DividerItemDecoration.VERTICAL)
         binding.list.addItemDecoration(decoration)
-        setupScrollListener()
+
 
         initAdapter()
         val query = savedInstanceState?.getString(LAST_SEARCH_QUERY) ?: DEFAULT_QUERY
@@ -73,6 +77,40 @@ class SearchRepositoriesActivity : AppCompatActivity() {
             header = ReposLoadStateAdapter { adapter.retry() },
             footer = ReposLoadStateAdapter { adapter.retry() }
         )
+        adapter.addLoadStateListener { loadState ->
+            if (loadState.refresh !is LoadState.NotLoading) {
+                // We're refreshing: either loading or we had an error
+                // So we can hide the list
+                binding.list.visibility = View.GONE
+                binding.progressBar.visibility = toVisibility(loadState.refresh is LoadState.Loading)
+                binding.retryButton.visibility = toVisibility(loadState.refresh is LoadState.Error)
+            } else {
+                // We're not actively refreshing
+                // So we should show the list
+                binding.list.visibility = View.VISIBLE
+                binding.progressBar.visibility = View.GONE
+                binding.retryButton.visibility = View.GONE
+                // If we have an error, show a toast
+                val errorState = when {
+                    loadState.append is LoadState.Error -> {
+                        loadState.append as LoadState.Error
+                    }
+                    loadState.prepend is LoadState.Error -> {
+                        loadState.prepend as LoadState.Error
+                    }
+                    else -> {
+                        null
+                    }
+                }
+                errorState?.let {
+                    Toast.makeText(
+                        this,
+                        "\uD83D\uDE28 Wooops ${it.error}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
     }
 
     private fun initSearch(query: String) {
@@ -113,29 +151,6 @@ class SearchRepositoriesActivity : AppCompatActivity() {
                 search(it.toString())
             }
         }
-    }
-
-    private fun showEmptyList(show: Boolean) {
-        if (show) {
-            binding.emptyList.visibility = View.VISIBLE
-            binding.list.visibility = View.GONE
-        } else {
-            binding.emptyList.visibility = View.GONE
-            binding.list.visibility = View.VISIBLE
-        }
-    }
-
-    private fun setupScrollListener() {
-        val layoutManager = binding.list.layoutManager as LinearLayoutManager
-        binding.list.addOnScrollListener(object : OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                super.onScrolled(recyclerView, dx, dy)
-                val totalItemCount = layoutManager.itemCount
-                val visibleItemCount = layoutManager.childCount
-                val lastVisibleItem = layoutManager.findLastVisibleItemPosition()
-
-            }
-        })
     }
 
     companion object {
